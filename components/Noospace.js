@@ -19,29 +19,39 @@ export default function Noospace({ guestMode = false }) {
   const [error, setError] = useState("");
   const [wallet, setWallet] = useState(null);
   const [connected, setConnected] = useState(false);
-  const [earning, setEarning] = useState(0); // placeholder for NOO earnings display
+  const [earning, setEarning] = useState(0);
 
   useEffect(() => {
     fetchEntries();
-    // detect phantom connect events
-    if (typeof window !== 'undefined' && window.solana && window.solana.isPhantom) {
+    if (typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
       try {
-        if (window.solana.isConnected) { setConnected(true); setWallet(window.solana.publicKey.toString()); }
-      } catch(e){}
-      window.solana.on('connect', () => { setConnected(true); setWallet(window.solana.publicKey.toString()); });
-      window.solana.on('disconnect', () => { setConnected(false); setWallet(null); });
+        if (window.solana.isConnected) {
+          setConnected(true);
+          setWallet(window.solana.publicKey.toString());
+        }
+      } catch (e) {}
+      window.solana.on("connect", () => {
+        setConnected(true);
+        setWallet(window.solana.publicKey.toString());
+      });
+      window.solana.on("disconnect", () => {
+        setConnected(false);
+        setWallet(null);
+      });
     }
-    // if guestMode param passed from landing, enable guest behavior
     if (guestMode) {
       setConnected(false);
       setWallet(null);
     }
     return () => {
-      if (typeof window !== 'undefined' && window.solana && window.solana.isPhantom) {
-        try { window.solana.removeAllListeners('connect'); window.solana.removeAllListeners('disconnect'); } catch(e){}
+      if (typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
+        try {
+          window.solana.removeAllListeners("connect");
+          window.solana.removeAllListeners("disconnect");
+        } catch (e) {}
       }
-    }
-  }, []);
+    };
+  }, [guestMode]);
 
   async function connectPhantom() {
     try {
@@ -50,14 +60,27 @@ export default function Noospace({ guestMode = false }) {
         return;
       }
       const resp = await window.solana.connect();
-      setWallet(resp.publicKey.toString()); setConnected(true); setError("");
-      // small UX: simulate earning increment when connected (placeholder)
-      setEarning(prev => prev + 1);
-    } catch (err) { console.error("Phantom connect error", err); setError("Could not connect Phantom."); }
+      setWallet(resp.publicKey.toString());
+      setConnected(true);
+      setError("");
+      setEarning((prev) => prev + 1);
+    } catch (err) {
+      console.error("Phantom connect error", err);
+      setError("Could not connect Phantom.");
+    }
   }
 
   async function disconnectPhantom() {
-    try { if (window.solana && window.solana.isPhantom) { await window.solana.disconnect(); setWallet(null); setConnected(false); setEarning(0); } } catch (err) { console.error(err) }
+    try {
+      if (window.solana && window.solana.isPhantom) {
+        await window.solana.disconnect();
+        setWallet(null);
+        setConnected(false);
+        setEarning(0);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function fetchEntries() {
@@ -66,52 +89,110 @@ export default function Noospace({ guestMode = false }) {
       const { data, error } = await supabase.from("entries").select("*").order("date", { ascending: true });
       if (error) throw error;
       setEntries(data || []);
-    } catch (err) { console.error("Fetch error:", err); setError("Could not fetch entries from Supabase."); }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError("Could not fetch entries from Supabase.");
+    }
   }
 
   const filtered = useMemo(() => {
     let list = entries;
-    if (filter) list = list.filter(e => (e.tags || []).includes(filter));
+    if (filter) list = list.filter((e) => (e.tags || []).includes(filter));
     return list;
   }, [entries, filter]);
 
-  function todayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-  function countToday() { const key = todayKey(); return entries.filter(e => e.date && e.date.startsWith(key)).length; }
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function countToday() {
+    const key = todayKey();
+    if (guestMode) {
+      const saved = JSON.parse(localStorage.getItem("guest_entries") || "{}");
+      return saved[key] || 0;
+    } else {
+      return entries.filter(
+        (e) => e.date && e.date.startsWith(key) && (wallet ? e.wallet === wallet : true)
+      ).length;
+    }
+  }
 
   async function addEntry() {
     setError("");
     const trimmed = text.trim();
-    const tgs = tags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean).slice(0,5);
-    if (!trimmed) { setError("Write a short impulse."); return; }
-    if (trimmed.length > MAX_CHARS) { setError("Too long."); return; }
-    if (countToday() >= DAILY_LIMIT) { setError("Daily ritual limit reached."); return; }
+    const tgs = tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 5);
+    if (!trimmed) {
+      setError("Write a short impulse.");
+      return;
+    }
+    if (trimmed.length > MAX_CHARS) {
+      setError("Too long.");
+      return;
+    }
+    if (countToday() >= DAILY_LIMIT) {
+      setError("Daily ritual limit reached.");
+      return;
+    }
 
-    const row = { text: trimmed, symbol: (symbol||"✶").slice(0,2), tags: tgs.length ? tgs : ["untagged"], wallet: wallet || null, date: new Date().toISOString(), stars: 0 };
+    const row = {
+      text: trimmed,
+      symbol: (symbol || "✶").slice(0, 2),
+      tags: tgs.length ? tgs : ["untagged"],
+      wallet: wallet || null,
+      date: new Date().toISOString(),
+      stars: 0,
+    };
+
     try {
       const { data, error } = await supabase.from("entries").insert([row]).select();
-      if (error) { console.error("Insert error", error); setError("Could not save entry."); return; }
-      setEntries(prev => [...prev, ...data]);
-      setText(""); setTags("");
-      // If connected and wallet present, simulate NOO token earn increment for UX
-      if (wallet) setEarning(prev => prev + 1);
-    } catch (err) { console.error("Insert exception", err); setError("Could not save entry."); }
+      if (error) {
+        console.error("Insert error", error);
+        setError("Could not save entry.");
+        return;
+      }
+      setEntries((prev) => [...prev, ...data]);
+      setText("");
+      setTags("");
+      if (wallet) setEarning((prev) => prev + 1);
+
+      if (guestMode) {
+        const key = todayKey();
+        const saved = JSON.parse(localStorage.getItem("guest_entries") || "{}");
+        saved[key] = (saved[key] || 0) + 1;
+        localStorage.setItem("guest_entries", JSON.stringify(saved));
+      }
+    } catch (err) {
+      console.error("Insert exception", err);
+      setError("Could not save entry.");
+    }
   }
 
   async function starEntry(id) {
     try {
-      const e = entries.find(x => x.id === id);
-      const { data, error } = await supabase.from("entries").update({ stars: (e?.stars||0)+1 }).eq("id", id).select();
+      const e = entries.find((x) => x.id === id);
+      const { data, error } = await supabase
+        .from("entries")
+        .update({ stars: (e?.stars || 0) + 1 })
+        .eq("id", id)
+        .select();
       if (error) throw error;
-      setEntries(prev => prev.map(p => p.id === id ? data[0] : p));
-    } catch (err) { console.error(err); setError("Could not star."); }
+      setEntries((prev) => prev.map((p) => (p.id === id ? data[0] : p)));
+    } catch (err) {
+      console.error(err);
+      setError("Could not star.");
+    }
   }
 
   async function deleteEntry(id) {
     try {
       const { error } = await supabase.from("entries").delete().eq("id", id);
       if (error) throw error;
-      setEntries(prev => prev.filter(p => p.id !== id));
-    } catch (err) { console.error(err); setError("Could not delete."); }
+      setEntries((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error(err);
+      setError("Could not delete.");
+    }
   }
 
   function SpiralView({ items }) {
@@ -120,22 +201,28 @@ export default function Noospace({ guestMode = false }) {
     const radiusStep = 32;
     const angleStep = 0.6;
     return (
-      <div className="spiral" style={{height: '640px', position: 'relative'}}>
+      <div className="spiral" style={{ height: "640px", position: "relative" }}>
         {items.map((it, i) => {
           const angle = i * angleStep;
           const r = i * radiusStep;
           const x = center.x + r * Math.cos(angle);
           const y = center.y + r * Math.sin(angle);
           return (
-            <motion.div key={it.id} initial={{opacity:0, scale:0.8}} animate={{opacity:1, scale:1}} className="bubble" style={{left:x, top:y}}>
+            <motion.div
+              key={it.id}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bubble"
+              style={{ left: x, top: y }}
+            >
               <div className="sym">{it.symbol}</div>
               <div className="txt">{it.text}</div>
-              <div className="meta">{(it.tags||[]).join(', ')}</div>
+              <div className="meta">{(it.tags || []).join(", ")}</div>
               <div className="actions">
-                <button onClick={()=>starEntry(it.id)}>⭐ {it.stars}</button>
+                <button onClick={() => starEntry(it.id)}>⭐ {it.stars}</button>
               </div>
             </motion.div>
-          )
+          );
         })}
       </div>
     );
@@ -150,16 +237,24 @@ export default function Noospace({ guestMode = false }) {
         </div>
         <div className="controls">
           <div className="btns">
-            <button className={view==='spiral'?'active':''} onClick={()=>setView('spiral')}>Spiral</button>
-            <button className={view==='scroll'?'active':''} onClick={()=>setView('scroll')}>Scroll</button>
+            <button className={view === "spiral" ? "active" : ""} onClick={() => setView("spiral")}>
+              Spiral
+            </button>
+            <button className={view === "scroll" ? "active" : ""} onClick={() => setView("scroll")}>
+              Scroll
+            </button>
           </div>
           <div className="wallet">
             {!connected ? (
-              <button onClick={connectPhantom} className="connect">Connect Phantom</button>
+              <button onClick={connectPhantom} className="connect">
+                Connect Phantom
+              </button>
             ) : (
-              <div className="connected" style={{display:'flex',alignItems:'center',gap:8}}>
-                <span className="dot" /> <code className="addr">{wallet.slice(0,6)}…{wallet.slice(-4)}</code>
-                <button onClick={disconnectPhantom} className="x">Disconnect</button>
+              <div className="connected" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="dot" /> <code className="addr">{wallet.slice(0, 6)}…{wallet.slice(-4)}</code>
+                <button onClick={disconnectPhantom} className="x">
+                  Disconnect
+                </button>
                 <div className="connected-banner">Connected — Earning NOO tokens.</div>
               </div>
             )}
@@ -169,9 +264,9 @@ export default function Noospace({ guestMode = false }) {
 
       <main className="main">
         <section className="composer">
-          <input value={symbol} onChange={e=>setSymbol(e.target.value)} maxLength={2} />
-          <textarea value={text} onChange={e=>setText(e.target.value)} placeholder="inscribe a brief impulse (≤ 240 chars)" />
-          <input value={tags} onChange={e=>setTags(e.target.value)} placeholder="tags (comma separated)" />
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value)} maxLength={2} />
+          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="inscribe a brief impulse (≤ 240 chars)" />
+          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="tags (comma separated)" />
           <div className="row">
             <div className="hint">Daily left: {Math.max(0, DAILY_LIMIT - countToday())}</div>
             <div className="actions">
@@ -183,19 +278,19 @@ export default function Noospace({ guestMode = false }) {
         </section>
 
         <section className="viewer">
-          {view==='scroll' ? (
+          {view === "scroll" ? (
             <div className="list">
-              {filtered.map(it=>(
+              {filtered.map((it) => (
                 <div className="item" key={it.id}>
                   <div className="left"><div className="sym2">{it.symbol}</div></div>
                   <div className="body">
                     <div className="text">{it.text}</div>
-                    <div className="tags">{(it.tags||[]).map(t=> <span key={t} className="tag">#{t}</span>)}</div>
+                    <div className="tags">{(it.tags || []).map((t) => <span key={t} className="tag">#{t}</span>)}</div>
                     <div className="meta">{new Date(it.date).toLocaleString()}</div>
                   </div>
                   <div className="right">
-                    <button onClick={()=>starEntry(it.id)}>⭐ {it.stars}</button>
-                    <button onClick={()=>deleteEntry(it.id)} className="del">🗑</button>
+                    <button onClick={() => starEntry(it.id)}>⭐ {it.stars}</button>
+                    <button onClick={() => deleteEntry(it.id)} className="del">🗑</button>
                   </div>
                 </div>
               ))}
