@@ -23,7 +23,9 @@ export default function Noospace({ guestMode = false }) {
 
   useEffect(() => {
     fetchEntries();
-    if (typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
+
+    // Wallet detection
+    if (!guestMode && typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
       try {
         if (window.solana.isConnected) {
           setConnected(true);
@@ -39,12 +41,9 @@ export default function Noospace({ guestMode = false }) {
         setWallet(null);
       });
     }
-    if (guestMode) {
-      setConnected(false);
-      setWallet(null);
-    }
+
     return () => {
-      if (typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
+      if (!guestMode && typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
         try {
           window.solana.removeAllListeners("connect");
           window.solana.removeAllListeners("disconnect");
@@ -86,7 +85,10 @@ export default function Noospace({ guestMode = false }) {
   async function fetchEntries() {
     setError("");
     try {
-      const { data, error } = await supabase.from("entries").select("*").order("date", { ascending: true });
+      const { data, error } = await supabase
+        .from("entries")
+        .select("*")
+        .order("date", { ascending: true });
       if (error) throw error;
       setEntries(data || []);
     } catch (err) {
@@ -108,20 +110,14 @@ export default function Noospace({ guestMode = false }) {
 
   function countToday() {
     const key = todayKey();
-    if (guestMode) {
-      const saved = JSON.parse(localStorage.getItem("guest_entries") || "{}");
-      return saved[key] || 0;
-    } else {
-      return entries.filter(
-        (e) => e.date && e.date.startsWith(key) && (wallet ? e.wallet === wallet : true)
-      ).length;
-    }
+    return entries.filter((e) => e.date && e.date.startsWith(key)).length;
   }
 
   async function addEntry() {
     setError("");
     const trimmed = text.trim();
     const tgs = tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 5);
+
     if (!trimmed) {
       setError("Write a short impulse.");
       return;
@@ -139,7 +135,7 @@ export default function Noospace({ guestMode = false }) {
       text: trimmed,
       symbol: (symbol || "✶").slice(0, 2),
       tags: tgs.length ? tgs : ["untagged"],
-      wallet: wallet || null,
+      wallet: wallet || (guestMode ? "guest" : null),
       date: new Date().toISOString(),
       stars: 0,
     };
@@ -155,13 +151,6 @@ export default function Noospace({ guestMode = false }) {
       setText("");
       setTags("");
       if (wallet) setEarning((prev) => prev + 1);
-
-      if (guestMode) {
-        const key = todayKey();
-        const saved = JSON.parse(localStorage.getItem("guest_entries") || "{}");
-        saved[key] = (saved[key] || 0) + 1;
-        localStorage.setItem("guest_entries", JSON.stringify(saved));
-      }
     } catch (err) {
       console.error("Insert exception", err);
       setError("Could not save entry.");
@@ -245,16 +234,14 @@ export default function Noospace({ guestMode = false }) {
             </button>
           </div>
           <div className="wallet">
-            {!connected ? (
-              <button onClick={connectPhantom} className="connect">
-                Connect Phantom
-              </button>
+            {!guestMode && !connected ? (
+              <button onClick={connectPhantom} className="connect">Connect Phantom</button>
+            ) : guestMode ? (
+              <div className="connected-banner">Guest Mode — no wallet required.</div>
             ) : (
               <div className="connected" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="dot" /> <code className="addr">{wallet.slice(0, 6)}…{wallet.slice(-4)}</code>
-                <button onClick={disconnectPhantom} className="x">
-                  Disconnect
-                </button>
+                <button onClick={disconnectPhantom} className="x">Disconnect</button>
                 <div className="connected-banner">Connected — Earning NOO tokens.</div>
               </div>
             )}
@@ -282,7 +269,9 @@ export default function Noospace({ guestMode = false }) {
             <div className="list">
               {filtered.map((it) => (
                 <div className="item" key={it.id}>
-                  <div className="left"><div className="sym2">{it.symbol}</div></div>
+                  <div className="left">
+                    <div className="sym2">{it.symbol}</div>
+                  </div>
                   <div className="body">
                     <div className="text">{it.text}</div>
                     <div className="tags">{(it.tags || []).map((t) => <span key={t} className="tag">#{t}</span>)}</div>
