@@ -5,8 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 const DAILY_LIMIT = 3;
 const MAX_CHARS = 240;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ljnjdguqjrevhhuwkaxg.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqbmpkZ3VxanJldmhodXdrYXhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzU0NDgsImV4cCI6MjA3MjU1MTQ0OH0._MRu-P-0r7hZ8i-Oh5xnYMaRNMEr1Vzw2tlKocMC6G4";
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "https://ljnjdguqjrevhhuwkaxg.supabase.co";
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqbmpkZ3VxanJldmhodXdrYXhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5NzU0NDgsImV4cCI6MjA3MjU1MTQ0OH0._MRu-P-0r7hZ8i-Oh5xnYMaRNMEr1Vzw2tlKocMC6G4";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Noospace({ guestMode = false }) {
@@ -23,9 +27,7 @@ export default function Noospace({ guestMode = false }) {
 
   useEffect(() => {
     fetchEntries();
-
-    // Wallet detection
-    if (!guestMode && typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
+    if (typeof window !== "undefined" && window.solana?.isPhantom) {
       try {
         if (window.solana.isConnected) {
           setConnected(true);
@@ -41,9 +43,12 @@ export default function Noospace({ guestMode = false }) {
         setWallet(null);
       });
     }
-
+    if (guestMode) {
+      setConnected(false);
+      setWallet("guest");
+    }
     return () => {
-      if (!guestMode && typeof window !== "undefined" && window.solana && window.solana.isPhantom) {
+      if (typeof window !== "undefined" && window.solana?.isPhantom) {
         try {
           window.solana.removeAllListeners("connect");
           window.solana.removeAllListeners("disconnect");
@@ -54,7 +59,7 @@ export default function Noospace({ guestMode = false }) {
 
   async function connectPhantom() {
     try {
-      if (!window.solana || !window.solana.isPhantom) {
+      if (!window.solana?.isPhantom) {
         setError("Phantom wallet not found. Please install Phantom (https://phantom.app).");
         return;
       }
@@ -71,7 +76,7 @@ export default function Noospace({ guestMode = false }) {
 
   async function disconnectPhantom() {
     try {
-      if (window.solana && window.solana.isPhantom) {
+      if (window.solana?.isPhantom) {
         await window.solana.disconnect();
         setWallet(null);
         setConnected(false);
@@ -105,19 +110,33 @@ export default function Noospace({ guestMode = false }) {
 
   function todayKey() {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
   }
 
   function countToday() {
     const key = todayKey();
-    return entries.filter((e) => e.date && e.date.startsWith(key)).length;
+    if (guestMode || wallet === "guest") {
+      return entries.filter(
+        (e) => e.wallet === "guest" && e.date && e.date.startsWith(key)
+      ).length;
+    } else if (wallet) {
+      return entries.filter(
+        (e) => e.wallet === wallet && e.date && e.date.startsWith(key)
+      ).length;
+    }
+    return 0;
   }
 
   async function addEntry() {
     setError("");
     const trimmed = text.trim();
-    const tgs = tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 5);
-
+    const tgs = tags
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 5);
     if (!trimmed) {
       setError("Write a short impulse.");
       return;
@@ -135,11 +154,10 @@ export default function Noospace({ guestMode = false }) {
       text: trimmed,
       symbol: (symbol || "✶").slice(0, 2),
       tags: tgs.length ? tgs : ["untagged"],
-      wallet: wallet || (guestMode ? "guest" : null),
+      wallet: wallet || "guest",
       date: new Date().toISOString(),
       stars: 0,
     };
-
     try {
       const { data, error } = await supabase.from("entries").insert([row]).select();
       if (error) {
@@ -150,7 +168,7 @@ export default function Noospace({ guestMode = false }) {
       setEntries((prev) => [...prev, ...data]);
       setText("");
       setTags("");
-      if (wallet) setEarning((prev) => prev + 1);
+      if (wallet && wallet !== "guest") setEarning((prev) => prev + 1);
     } catch (err) {
       console.error("Insert exception", err);
       setError("Could not save entry.");
@@ -185,7 +203,8 @@ export default function Noospace({ guestMode = false }) {
   }
 
   function SpiralView({ items }) {
-    if (!items || items.length === 0) return <div className="muted">The field is quiet — inscribe.</div>;
+    if (!items || items.length === 0)
+      return <div className="muted">The field is quiet — inscribe.</div>;
     const center = { x: 350, y: 300 };
     const radiusStep = 32;
     const angleStep = 0.6;
@@ -234,13 +253,16 @@ export default function Noospace({ guestMode = false }) {
             </button>
           </div>
           <div className="wallet">
-            {!guestMode && !connected ? (
-              <button onClick={connectPhantom} className="connect">Connect Phantom</button>
-            ) : guestMode ? (
-              <div className="connected-banner">Guest Mode — no wallet required.</div>
+            {!connected && wallet !== "guest" ? (
+              <button onClick={connectPhantom} className="connect">
+                Connect Phantom
+              </button>
+            ) : wallet === "guest" ? (
+              <div className="connected-banner">Guest Mode — Limited entries</div>
             ) : (
               <div className="connected" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="dot" /> <code className="addr">{wallet.slice(0, 6)}…{wallet.slice(-4)}</code>
+                <span className="dot" />{" "}
+                <code className="addr">{wallet.slice(0, 6)}…{wallet.slice(-4)}</code>
                 <button onClick={disconnectPhantom} className="x">Disconnect</button>
                 <div className="connected-banner">Connected — Earning NOO tokens.</div>
               </div>
@@ -252,8 +274,16 @@ export default function Noospace({ guestMode = false }) {
       <main className="main">
         <section className="composer">
           <input value={symbol} onChange={(e) => setSymbol(e.target.value)} maxLength={2} />
-          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="inscribe a brief impulse (≤ 240 chars)" />
-          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="tags (comma separated)" />
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="inscribe a brief impulse (≤ 240 chars)"
+          />
+          <input
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="tags (comma separated)"
+          />
           <div className="row">
             <div className="hint">Daily left: {Math.max(0, DAILY_LIMIT - countToday())}</div>
             <div className="actions">
@@ -274,7 +304,11 @@ export default function Noospace({ guestMode = false }) {
                   </div>
                   <div className="body">
                     <div className="text">{it.text}</div>
-                    <div className="tags">{(it.tags || []).map((t) => <span key={t} className="tag">#{t}</span>)}</div>
+                    <div className="tags">
+                      {(it.tags || []).map((t) => (
+                        <span key={t} className="tag">#{t}</span>
+                      ))}
+                    </div>
                     <div className="meta">{new Date(it.date).toLocaleString()}</div>
                   </div>
                   <div className="right">
